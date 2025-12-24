@@ -16,7 +16,7 @@ Consult BEFORE creating files.
 ## Response Style: LASER (3 lines only)
 
 ```
-✅ Path: ψ/memory/learnings/topic.md
+✅ Path: ψ/memory/learnings/YYYY-MM/DD/HH.MM_slug.md
 📁 Why: Knowledge capture
 🔮 Oracle: Nothing is Deleted
 ```
@@ -25,8 +25,8 @@ Consult BEFORE creating files.
 
 | Type | Home |
 |------|------|
-| Retrospectives | `ψ/memory/retrospectives/YYYY-MM/DD/` |
-| Learnings | `ψ/memory/learnings/` |
+| Retrospectives | `ψ/memory/retrospectives/YYYY-MM/DD/HH.MM_slug.md` |
+| Learnings | `ψ/memory/learnings/YYYY-MM/DD/HH.MM_slug.md` |
 | Logs | `ψ/memory/logs/` |
 | Active research | `ψ/active/` |
 | Drafts | `ψ/writing/drafts/` |
