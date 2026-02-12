@@ -285,12 +285,19 @@ export class ChromaMcpClient {
       const content = result.content as Array<{ type: string; text?: string }>;
       const data = content[0];
       if (data.type !== 'text' || !data.text) {
+        console.error('[ChromaDB] getStats: unexpected response format:', JSON.stringify(content).substring(0, 200));
         return { count: 0 };
       }
 
       const parsed = JSON.parse(data.text);
-      return { count: parsed.count || 0 };
-    } catch {
+      // chroma-mcp may return count as 'count', 'num_documents', or 'size'
+      const count = parsed.count ?? parsed.num_documents ?? parsed.size ?? 0;
+      if (count === 0 && data.text.length > 2) {
+        console.error('[ChromaDB] getStats: count=0 but response has data:', data.text.substring(0, 300));
+      }
+      return { count };
+    } catch (error) {
+      console.error('[ChromaDB] getStats error:', error instanceof Error ? error.message : String(error));
       return { count: 0 };
     }
   }
