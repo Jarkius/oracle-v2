@@ -1135,8 +1135,11 @@ Philosophy: "Nothing is Deleted" — All interactions logged.`,
       score: 1 - (result.score || 0), // Convert distance to similarity
     }));
 
+    // Boost exact matches to fix stemmer miscorrection (#133: pizza → pinia)
+    const boostedFtsResults = this.boostExactMatches(ftsResults, safeQuery);
+
     // Combine results using hybrid ranking
-    const combinedResults = this.combineResults(ftsResults, normalizedVectorResults);
+    const combinedResults = this.combineResults(boostedFtsResults, normalizedVectorResults);
 
     // Total matches before pagination
     const totalMatches = combinedResults.length;
@@ -1670,6 +1673,25 @@ Philosophy: "Nothing is Deleted" — All interactions logged.`,
     // Exponential decay gives better separation for top results
     const absRank = Math.abs(rank);
     return Math.exp(-0.3 * absRank);
+  }
+
+  /**
+   * Boost score for results containing exact query words (case-insensitive).
+   * Fixes #133: Porter stemmer can match unrelated words (pizza → pinia).
+   * Results with exact word matches get boosted above stem-only matches.
+   */
+  private boostExactMatches(results: any[], query: string): any[] {
+    const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    if (queryWords.length === 0) return results;
+
+    return results.map(r => {
+      const content = (r.content || '').toLowerCase();
+      const matchCount = queryWords.filter(w => content.includes(w)).length;
+      const matchRatio = matchCount / queryWords.length;
+      // Boost: up to 30% for full exact match, proportional for partial
+      const boost = matchRatio * 0.3;
+      return { ...r, score: Math.min(1, (r.score || 0) + boost) };
+    }).sort((a, b) => (b.score || 0) - (a.score || 0));
   }
 
   /**

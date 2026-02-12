@@ -177,6 +177,9 @@ export async function handleSearch(
     }
   }
 
+  // Boost exact matches to fix stemmer miscorrection (#133: pizza → pinia)
+  ftsResults = boostExactMatches(ftsResults, safeQuery);
+
   // Combine results using hybrid ranking
   const combined = combineSearchResults(ftsResults, vectorResults);
   const total = Math.max(ftsTotal, combined.length);
@@ -206,6 +209,25 @@ function normalizeRank(rank: number): number {
   // FTS5 rank is negative (more negative = better match)
   // Convert to positive 0-1 score
   return Math.min(1, Math.max(0, 1 / (1 + Math.abs(rank))));
+}
+
+/**
+ * Boost score for results containing exact query words (case-insensitive).
+ * Fixes #133: Porter stemmer can match unrelated words (pizza → pinia).
+ * Results with exact word matches get boosted above stem-only matches.
+ */
+function boostExactMatches(results: SearchResult[], query: string): SearchResult[] {
+  const queryWords = query.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+  if (queryWords.length === 0) return results;
+
+  return results.map(r => {
+    const content = (r.content || '').toLowerCase();
+    const matchCount = queryWords.filter(w => content.includes(w)).length;
+    const matchRatio = matchCount / queryWords.length;
+    // Boost: up to 30% for full exact match, proportional for partial
+    const boost = matchRatio * 0.3;
+    return { ...r, score: Math.min(1, (r.score || 0) + boost) };
+  }).sort((a, b) => (b.score || 0) - (a.score || 0));
 }
 
 /**
