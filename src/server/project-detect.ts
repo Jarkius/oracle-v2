@@ -1,27 +1,26 @@
 /**
- * Project Detection via ghq/symlink resolution
+ * Project Detection via ghq/symlink resolution + git remote fallback
  *
- * Auto-detects project context from working directory by following
- * symlinks to ghq paths. No hardcoding or marker files needed.
+ * Auto-detects project context from working directory. Cross-platform (macOS/Windows/Linux).
  *
  * Algorithm:
  * 1. Resolve symlinks to get real path (fs.realpathSync)
- * 2. Match ghq pattern: [path]/github.com/owner/repo/[...]
- * 3. Extract project identifier
+ * 2. Match ghq pattern: [path]/github.com/owner/repo/[...] (forward or back slashes)
+ * 3. Fallback: read .git/config for remote origin URL
+ * 4. Extract project identifier
  *
- * Example:
- *   cwd: ~/Nat-s-Agents/incubated/headline-mono/src/
- *        -> (symlink resolves)
- *   real: ~/Code/github.com/laris-co/headline-mono/src/
- *        -> (regex match)
- *   project: "github.com/laris-co/headline-mono"
+ * Examples:
+ *   macOS:   ~/Code/github.com/laris-co/headline-mono/src/ → "github.com/laris-co/headline-mono"
+ *   Windows: C:\Users\dev\ghq\github.com\owner\repo\       → "github.com/owner/repo"
+ *   Any OS:  C:\Workspace\Dev\my-app\ (has .git remote)    → "github.com/owner/my-app"
  */
 
 import fs from 'fs';
 import path from 'path';
 
 /**
- * Detect project from working directory by following symlinks to ghq path
+ * Detect project from working directory.
+ * Tries ghq path pattern first, then falls back to git remote origin.
  * @param cwd - Current working directory (may be symlink)
  * @returns Project identifier (e.g., "github.com/owner/repo") or null if not detectable
  */
@@ -32,20 +31,29 @@ export function detectProject(cwd?: string): string | null {
     // 1. Resolve symlinks to get real path
     const realPath = fs.realpathSync(cwd);
 
+    // Normalize to forward slashes for cross-platform regex matching
+    const normalized = realPath.replace(/\\/g, '/');
+
     // 2. Match ghq pattern: */github.com/owner/repo/* or */gitlab.com/owner/repo/*
-    // Supports: github.com, gitlab.com, bitbucket.org, etc.
-    const match = realPath.match(/\/(github\.com|gitlab\.com|bitbucket\.org)\/([^/]+\/[^/]+)/);
+    // Works on both macOS (/Users/.../github.com/...) and Windows (C:/Users/.../github.com/...)
+    const match = normalized.match(/[/\\](github\.com|gitlab\.com|bitbucket\.org)[/\\]([^/\\]+[/\\][^/\\]+)/);
 
     if (match) {
       const [, host, ownerRepo] = match;
-      return `${host}/${ownerRepo}`;
+      return `${host}/${ownerRepo.replace(/\\/g, '/')}`;
     }
 
     // 3. Fallback: check for ghq root pattern without known host
     // Pattern: ~/Code/*/owner/repo or similar
-    const ghqMatch = realPath.match(/\/Code\/([^/]+\/[^/]+\/[^/]+)/);
+    const ghqMatch = normalized.match(/\/Code\/([^/]+\/[^/]+\/[^/]+)/);
     if (ghqMatch) {
       return ghqMatch[1];
+    }
+
+    // 4. Fallback: detect from git remote origin URL
+    const gitProject = detectProjectFromGitRemote(cwd);
+    if (gitProject) {
+      return gitProject;
     }
 
     return null;
@@ -53,6 +61,58 @@ export function detectProject(cwd?: string): string | null {
     // Path doesn't exist or can't be resolved
     return null;
   }
+}
+
+/**
+ * Detect project by reading .git/config for remote origin URL
+ * Walks up directories to find .git folder (cross-platform, no subprocess needed)
+ * @param cwd - Directory to check
+ * @returns Project identifier or null
+ */
+function detectProjectFromGitRemote(cwd: string): string | null {
+  try {
+    // Walk up to find .git directory
+    let dir = path.resolve(cwd);
+    const root = path.parse(dir).root;
+
+    while (dir !== root) {
+      const gitConfig = path.join(dir, '.git', 'config');
+      if (fs.existsSync(gitConfig)) {
+        const config = fs.readFileSync(gitConfig, 'utf-8');
+        // Match: url = https://github.com/owner/repo.git or url = git@github.com:owner/repo.git
+        const urlMatch = config.match(/\[remote\s+"origin"\][^[]*url\s*=\s*(.+)/m);
+        if (urlMatch) {
+          return extractProjectFromRemoteUrl(urlMatch[1].trim());
+        }
+        return null; // Found .git but no origin remote
+      }
+      dir = path.dirname(dir);
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract project identifier from a git remote URL
+ * Handles: https://github.com/owner/repo.git, git@github.com:owner/repo.git, etc.
+ */
+function extractProjectFromRemoteUrl(url: string): string | null {
+  // HTTPS: https://github.com/owner/repo.git
+  const httpsMatch = url.match(/https?:\/\/(github\.com|gitlab\.com|bitbucket\.org)\/([^/]+\/[^/\s]+)/);
+  if (httpsMatch) {
+    return `${httpsMatch[1]}/${httpsMatch[2].replace(/\.git$/, '')}`;
+  }
+
+  // SSH: git@github.com:owner/repo.git
+  const sshMatch = url.match(/(github\.com|gitlab\.com|bitbucket\.org)[:/]([^/]+\/[^/\s]+)/);
+  if (sshMatch) {
+    return `${sshMatch[1]}/${sshMatch[2].replace(/\.git$/, '')}`;
+  }
+
+  return null;
 }
 
 /**
