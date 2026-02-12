@@ -31,7 +31,7 @@ import {
   getMessages,
   updateThreadStatus,
 } from './forum/handler.js';
-import { detectProject } from './server/project-detect.js';
+import { detectProject, normalizeProject, extractProjectFromSource } from './server/project-detect.js';
 
 import {
   createDecision,
@@ -1324,61 +1324,8 @@ Philosophy: "Nothing is Deleted" — All interactions logged.`,
     };
   }
 
-  /**
-   * Normalize project input to "github.com/owner/repo" format
-   * Accepts:
-   * - "github.com/owner/repo" → as-is
-   * - "owner/repo" → "github.com/owner/repo"
-   * - "https://github.com/owner/repo" → "github.com/owner/repo"
-   * - "~/Code/github.com/owner/repo" → "github.com/owner/repo"
-   * - "/Users/nat/Code/github.com/owner/repo/..." → "github.com/owner/repo"
-   */
-  private normalizeProject(input?: string): string | null {
-    if (!input) return null;
-
-    // Already normalized
-    if (input.match(/^github\.com\/[^\/]+\/[^\/]+$/)) {
-      return input;
-    }
-
-    // GitHub URL: https://github.com/owner/repo or http://github.com/owner/repo
-    const urlMatch = input.match(/https?:\/\/github\.com\/([^\/]+\/[^\/]+)/);
-    if (urlMatch) return `github.com/${urlMatch[1].replace(/\.git$/, '')}`;
-
-    // Local path with github.com: ~/Code/github.com/owner/repo or /Users/.../github.com/owner/repo
-    const pathMatch = input.match(/github\.com\/([^\/]+\/[^\/]+)/);
-    if (pathMatch) return `github.com/${pathMatch[1]}`;
-
-    // Short format: owner/repo (no slashes except the one between owner/repo)
-    const shortMatch = input.match(/^([^\/\s]+\/[^\/\s]+)$/);
-    if (shortMatch) return `github.com/${shortMatch[1]}`;
-
-    return null;
-  }
-
-  /**
-   * Extract project from source field (fallback)
-   * Handles formats:
-   * - "oracle_learn from github.com/owner/repo ..."
-   * - "rrr: org/repo" or "rrr: Owner/Repo"
-   */
-  private extractProjectFromSource(source?: string): string | null {
-    if (!source) return null;
-
-    // Try "oracle_learn from github.com/owner/repo"
-    const oracleLearnMatch = source.match(/from\s+(github\.com\/[^\/\s]+\/[^\/\s]+)/);
-    if (oracleLearnMatch) return oracleLearnMatch[1];
-
-    // Try "rrr: org/repo" format (convert to github.com/org/repo)
-    const rrrMatch = source.match(/^rrr:\s*([^\/\s]+\/[^\/\s]+)/);
-    if (rrrMatch) return `github.com/${rrrMatch[1]}`;
-
-    // Try direct "github.com/owner/repo" anywhere in source
-    const directMatch = source.match(/(github\.com\/[^\/\s]+\/[^\/\s]+)/);
-    if (directMatch) return directMatch[1];
-
-    return null;
-  }
+  // normalizeProject and extractProjectFromSource moved to shared module:
+  // src/server/project-detect.ts
 
   /**
    * Tool: oracle_learn
@@ -1435,8 +1382,8 @@ Philosophy: "Nothing is Deleted" — All interactions logged.`,
     const id = `learning_${dateStr}_${slug}`;
 
     // Resolve project: explicit arg → parse from source → local detection
-    const project = this.normalizeProject(projectInput)
-      || this.extractProjectFromSource(source)
+    const project = normalizeProject(projectInput)
+      || extractProjectFromSource(source)
       || detectProject(this.repoRoot);
 
     // Insert metadata with provenance (Drizzle)

@@ -13,7 +13,7 @@ import { REPO_ROOT } from './db.js';
 import { logSearch, logDocumentAccess, logLearning, logConsult } from './logging.js';
 import type { SearchResult, SearchResponse } from './types.js';
 import { ChromaMcpClient } from '../chroma-mcp.js';
-import { detectProject } from './project-detect.js';
+import { detectProject, normalizeProject, extractProjectFromSource } from './project-detect.js';
 
 // Singleton ChromaMcpClient for vector search
 // HTTP server can use this because it's NOT an MCP server (no stdio conflict)
@@ -742,8 +742,10 @@ export function handleLearn(
   project?: string,
   cwd?: string
 ) {
-  // Auto-detect project from cwd if not explicitly specified
-  const resolvedProject = project ?? detectProject(cwd);
+  // Normalize project input, extract from source, or auto-detect from cwd
+  const resolvedProject = normalizeProject(project)
+    ?? extractProjectFromSource(source)
+    ?? detectProject(cwd);
   const now = new Date();
   const dateStr = now.toISOString().split('T')[0]; // YYYY-MM-DD
 
