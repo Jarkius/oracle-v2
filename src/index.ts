@@ -2488,7 +2488,7 @@ async function main() {
     try {
       console.error('[Startup] Pre-connecting to chroma-mcp...');
       const chromaTimeout = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Chroma connect timeout (10s)')), 10000)
+        setTimeout(() => reject(new Error('Chroma connect timeout (30s)')), 30000)
       );
       await Promise.race([server.preConnectChroma(), chromaTimeout]);
       console.error('[Startup] Chroma pre-connected successfully');
