@@ -2480,12 +2480,22 @@ async function main() {
   const server = new OracleMCPServer({ readOnly });
 
   // Pre-connect to chroma-mcp before MCP server takes over stdio
-  try {
-    console.error('[Startup] Pre-connecting to chroma-mcp...');
-    await server.preConnectChroma();
-    console.error('[Startup] Chroma pre-connected successfully');
-  } catch (e) {
-    console.error('[Startup] Chroma pre-connect failed:', e instanceof Error ? e.message : e);
+  // Skip with ORACLE_NO_CHROMA=true or --no-chroma flag (e.g., corporate proxy blocks uvx)
+  const noChroma = process.env.ORACLE_NO_CHROMA === 'true' || process.argv.includes('--no-chroma');
+  if (noChroma) {
+    console.error('[Startup] ChromaDB disabled (ORACLE_NO_CHROMA or --no-chroma). Using FTS5 only.');
+  } else {
+    try {
+      console.error('[Startup] Pre-connecting to chroma-mcp...');
+      const chromaTimeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Chroma connect timeout (10s)')), 10000)
+      );
+      await Promise.race([server.preConnectChroma(), chromaTimeout]);
+      console.error('[Startup] Chroma pre-connected successfully');
+    } catch (e) {
+      console.error('[Startup] Chroma pre-connect failed:', e instanceof Error ? e.message : e);
+      console.error('[Startup] Continuing with FTS5 only. Set ORACLE_NO_CHROMA=true to skip this delay.');
+    }
   }
 
   // Auto-start HTTP server if not running (Issue #24)
