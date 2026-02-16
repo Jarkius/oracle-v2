@@ -105,6 +105,22 @@ try {
   // Table might not exist yet - that's fine
 }
 
+// Cache GHQ_ROOT at startup (avoid spawning ghq on every /api/file request — pops CMD on Windows)
+let GHQ_ROOT_CACHED: string | undefined = process.env.GHQ_ROOT;
+if (!GHQ_ROOT_CACHED) {
+  try {
+    const proc = Bun.spawnSync(['ghq', 'root']);
+    GHQ_ROOT_CACHED = proc.stdout.toString().trim() || undefined;
+  } catch {
+    // Fallback: derive from REPO_ROOT (assume ghq structure)
+    const match = REPO_ROOT.replace(/\\/g, '/').match(/^(.+?)\/github\.com\//);
+    GHQ_ROOT_CACHED = match ? match[1] : undefined;
+  }
+}
+if (GHQ_ROOT_CACHED) {
+  console.log(`[GHQ] Root: ${GHQ_ROOT_CACHED}`);
+}
+
 // Configure process lifecycle management
 const dataDir = path.join(import.meta.dirname || __dirname, '..');
 configure({ dataDir, pidFileName: 'oracle-http.pid' });
@@ -260,21 +276,8 @@ app.get('/api/file', async (c) => {
   }
 
   try {
-    // Determine base path: ghq root + project, or local REPO_ROOT
-    // Detect GHQ_ROOT dynamically (no hardcoding)
-    let GHQ_ROOT = process.env.GHQ_ROOT;
-    if (!GHQ_ROOT) {
-      try {
-        const proc = Bun.spawnSync(['ghq', 'root']);
-        GHQ_ROOT = proc.stdout.toString().trim();
-      } catch {
-        // Fallback: derive from REPO_ROOT (assume ghq structure)
-        // REPO_ROOT is like /path/to/github.com/owner/repo
-        // GHQ_ROOT would be /path/to
-        const match = REPO_ROOT.match(/^(.+?)\/github\.com\//);
-        GHQ_ROOT = match ? match[1] : path.dirname(path.dirname(path.dirname(REPO_ROOT)));
-      }
-    }
+    // Use cached GHQ_ROOT (computed once at startup)
+    const GHQ_ROOT = GHQ_ROOT_CACHED || path.dirname(path.dirname(path.dirname(REPO_ROOT)));
     let basePath: string;
 
     if (project) {
@@ -945,5 +948,6 @@ console.log(`
 
 export default {
   port: Number(PORT),
+  reusePort: true,
   fetch: app.fetch,
 };

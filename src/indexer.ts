@@ -10,8 +10,8 @@
  * - Each principle/pattern becomes multiple vectors
  * - Enable concept-based filtering
  *
- * Uses chroma-mcp (Python) via MCP protocol for embeddings.
- * This avoids pnpm/npm dynamic import issues with chromadb-default-embed.
+ * Uses @huggingface/transformers for in-process embeddings (ONNX)
+ * and chromadb npm package for direct HTTP access to ChromaDB server.
  */
 
 import fs from 'fs';
@@ -21,14 +21,14 @@ import { drizzle, BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
 import { eq, and, or, isNull, inArray, sql } from 'drizzle-orm';
 import * as schema from './db/schema.js';
 import { oracleDocuments, indexingStatus } from './db/schema.js';
-import { ChromaMcpClient } from './chroma-mcp.js';
+import { ChromaDirectClient } from './chroma-direct.js';
 import { detectProject } from './server/project-detect.js';
 import type { OracleDocument, OracleMetadata, IndexerConfig } from './types.js';
 
 export class OracleIndexer {
   private sqlite: Database;  // Raw bun:sqlite for FTS and schema operations
   private db: BunSQLiteDatabase<typeof schema>;  // Drizzle for type-safe queries
-  private chromaClient: ChromaMcpClient | null = null;
+  private chromaClient: ChromaDirectClient | null = null;
   private config: IndexerConfig;
   private project: string | null;
 
@@ -252,16 +252,13 @@ export class OracleIndexer {
       }
     }
 
-    // Initialize ChromaMcpClient (uses chroma-mcp Python server)
+    // Initialize ChromaDirectClient (in-process embeddings + HTTP to ChromaDB server)
     try {
-      this.chromaClient = new ChromaMcpClient(
-        'oracle_knowledge',
-        this.config.chromaPath,
-        '3.12'  // Python version
-      );
+      const chromaUrl = process.env.CHROMA_URL || 'http://localhost:8000';
+      this.chromaClient = new ChromaDirectClient('oracle_knowledge', chromaUrl);
       await this.chromaClient.deleteCollection();
       await this.chromaClient.ensureCollection();
-      console.log('ChromaDB connected via MCP');
+      console.log('ChromaDB connected (direct HTTP)');
     } catch (e) {
       console.log('ChromaDB not available, using SQLite-only mode:', e instanceof Error ? e.message : e);
       this.chromaClient = null;
@@ -747,7 +744,6 @@ if (isMain) {
   const config: IndexerConfig = {
     repoRoot,
     dbPath: process.env.ORACLE_DB_PATH || path.join(oracleDataDir, 'oracle.db'),
-    chromaPath: path.join(homeDir, '.chromadb'),
     sourcePaths: {
       resonance: 'ψ/memory/resonance',
       learnings: 'ψ/memory/learnings',

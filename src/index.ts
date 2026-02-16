@@ -21,7 +21,7 @@ import { drizzle, BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
 import { eq, sql, and, ne, isNotNull, inArray } from 'drizzle-orm';
 import * as schema from './db/schema.js';
 import { oracleDocuments, consultLog } from './db/schema.js';
-import { ChromaMcpClient } from './chroma-mcp.js';
+import { ChromaDirectClient } from './chroma-direct.js';
 import path from 'path';
 import fs from 'fs';
 import {
@@ -190,7 +190,7 @@ class OracleMCPServer {
   private sqlite: Database;  // Raw bun:sqlite for FTS operations
   private db: BunSQLiteDatabase<typeof schema>;  // Drizzle for type-safe queries
   private repoRoot: string;
-  private chromaMcp: ChromaMcpClient;
+  private chromaDirect: ChromaDirectClient;
   private chromaStatus: 'unknown' | 'connected' | 'unavailable' = 'unknown';
   private readOnly: boolean;
 
@@ -204,9 +204,9 @@ class OracleMCPServer {
     // Common paths
     const homeDir = process.env.HOME || process.env.USERPROFILE || '/tmp';
 
-    // Initialize ChromaMcpClient (uses same uvx/chroma-mcp as indexer)
-    const chromaPath = path.join(homeDir, '.chromadb');
-    this.chromaMcp = new ChromaMcpClient('oracle_knowledge', chromaPath, '3.12');
+    // Initialize ChromaDirectClient (in-process embeddings + HTTP to ChromaDB server)
+    const chromaUrl = process.env.CHROMA_URL || 'http://localhost:8000';
+    this.chromaDirect = new ChromaDirectClient('oracle_knowledge', chromaUrl);
 
     this.server = new Server(
       {
@@ -234,12 +234,12 @@ class OracleMCPServer {
   }
 
   /**
-   * Verify ChromaDB connection health via chroma-mcp
+   * Verify ChromaDB connection health
    * Non-blocking - logs status and sets chromaStatus flag
    */
   private async verifyChromaHealth(): Promise<void> {
     try {
-      const stats = await this.chromaMcp.getStats();
+      const stats = await this.chromaDirect.getStats();
       if (stats.count > 0) {
         this.chromaStatus = 'connected';
         console.error(`[ChromaDB] ✓ oracle_knowledge: ${stats.count} documents`);
@@ -266,7 +266,7 @@ class OracleMCPServer {
 
   private async cleanup(): Promise<void> {
     this.sqlite.close();
-    await this.chromaMcp.close();
+    await this.chromaDirect.close();
   }
 
   /**
@@ -1820,7 +1820,7 @@ Philosophy: "Nothing is Deleted" — All interactions logged.`,
   }
 
   /**
-   * Private: Vector search using ChromaMcpClient (same uvx/chroma-mcp as indexer)
+   * Private: Vector search using ChromaDirectClient
    * Performs semantic similarity search on the oracle_knowledge collection
    *
    * @param query - Natural language query
@@ -1847,8 +1847,8 @@ Philosophy: "Nothing is Deleted" — All interactions logged.`,
 
       console.error(`[VectorSearch] Query: "${query.substring(0, 50)}..." limit=${limit}`);
 
-      // Query via ChromaMcpClient (uses same embedding model as indexer)
-      const results = await this.chromaMcp.query(query, limit, whereFilter);
+      // Query via ChromaDirectClient (in-process embeddings)
+      const results = await this.chromaDirect.query(query, limit, whereFilter);
 
       console.error(`[VectorSearch] Results: ${results.ids?.length || 0} documents`);
 
@@ -2453,11 +2453,11 @@ Philosophy: "Nothing is Deleted" — All interactions logged.`,
   }
 
   /**
-   * Pre-connect to chroma-mcp before MCP server starts
-   * This avoids stdio conflicts by establishing connection early
+   * Pre-connect to ChromaDB and warm up embedding model before MCP server starts
    */
   async preConnectChroma(): Promise<void> {
-    await this.chromaMcp.connect();
+    await this.chromaDirect.connect();
+    await this.chromaDirect.warmUp();
   }
 
   /**
@@ -2472,28 +2472,28 @@ Philosophy: "Nothing is Deleted" — All interactions logged.`,
 
 /**
  * Main entry point
- * Pre-connect to chroma-mcp BEFORE starting MCP server to avoid stdio conflicts
+ * Pre-connect to ChromaDB and warm up embeddings before starting MCP server
  */
 async function main() {
   // Check for read-only mode via env var or CLI arg
   const readOnly = process.env.ORACLE_READ_ONLY === 'true' || process.argv.includes('--read-only');
   const server = new OracleMCPServer({ readOnly });
 
-  // Pre-connect to chroma-mcp before MCP server takes over stdio
-  // Skip with ORACLE_NO_CHROMA=true or --no-chroma flag (e.g., corporate proxy blocks uvx)
+  // Pre-connect to ChromaDB + warm up embedding model
+  // Skip with ORACLE_NO_CHROMA=true or --no-chroma flag
   const noChroma = process.env.ORACLE_NO_CHROMA === 'true' || process.argv.includes('--no-chroma');
   if (noChroma) {
     console.error('[Startup] ChromaDB disabled (ORACLE_NO_CHROMA or --no-chroma). Using FTS5 only.');
   } else {
     try {
-      console.error('[Startup] Pre-connecting to chroma-mcp...');
+      console.error('[Startup] Pre-connecting to ChromaDB + warming up embeddings...');
       const chromaTimeout = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Chroma connect timeout (30s)')), 30000)
       );
       await Promise.race([server.preConnectChroma(), chromaTimeout]);
-      console.error('[Startup] Chroma pre-connected successfully');
+      console.error('[Startup] ChromaDB connected + embeddings warm');
     } catch (e) {
-      console.error('[Startup] Chroma pre-connect failed:', e instanceof Error ? e.message : e);
+      console.error('[Startup] ChromaDB pre-connect failed:', e instanceof Error ? e.message : e);
       console.error('[Startup] Continuing with FTS5 only. Set ORACLE_NO_CHROMA=true to skip this delay.');
     }
   }

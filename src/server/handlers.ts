@@ -12,25 +12,23 @@ import { db, sqlite, oracleDocuments, indexingStatus } from '../db/index.js';
 import { REPO_ROOT } from './db.js';
 import { logSearch, logDocumentAccess, logLearning, logConsult } from './logging.js';
 import type { SearchResult, SearchResponse } from './types.js';
-import { ChromaMcpClient } from '../chroma-mcp.js';
+import { ChromaDirectClient } from '../chroma-direct.js';
 import { detectProject, normalizeProject, extractProjectFromSource } from './project-detect.js';
 
-// Singleton ChromaMcpClient for vector search
-// HTTP server can use this because it's NOT an MCP server (no stdio conflict)
-const HOME_DIR = process.env.HOME || process.env.USERPROFILE || '/tmp';
-const CHROMA_PATH = path.join(HOME_DIR, '.chromadb');
-let chromaClient: ChromaMcpClient | null = null;
+// Singleton ChromaDirectClient for vector search
+const CHROMA_URL = process.env.CHROMA_URL || 'http://localhost:8000';
+let chromaClient: ChromaDirectClient | null = null;
 
-function getChromaClient(): ChromaMcpClient {
+function getChromaClient(): ChromaDirectClient {
   if (!chromaClient) {
-    chromaClient = new ChromaMcpClient('oracle_knowledge', CHROMA_PATH, '3.12');
+    chromaClient = new ChromaDirectClient('oracle_knowledge', CHROMA_URL);
   }
   return chromaClient;
 }
 
 /**
  * Search Oracle knowledge base with hybrid search (FTS5 + Vector)
- * HTTP server can safely use ChromaMcpClient since it's not an MCP server
+ * HTTP server uses ChromaDirectClient for vector search
  */
 export async function handleSearch(
   query: string,
