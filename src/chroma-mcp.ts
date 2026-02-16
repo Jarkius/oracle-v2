@@ -136,7 +136,7 @@ export class ChromaMcpClient {
         name: 'chroma_create_collection',
         arguments: {
           collection_name: this.collectionName,
-          embedding_function_name: 'default'
+          embedding_function_name: 'ollama'
         }
       });
       console.log(`Collection '${this.collectionName}' created`);
