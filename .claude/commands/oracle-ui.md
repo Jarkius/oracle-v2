@@ -1,18 +1,22 @@
 ---
-description: Start backend + frontend dev servers in one shot
+description: Start Oracle web UI (backend API + frontend dashboard)
 ---
 
-# /dev - Start Development Servers
+# /oracle-ui - Start Oracle Web UI
 
-Start both the backend API server and frontend dev server.
+Start the Oracle web dashboard. This is for browsing the knowledge base in a browser — NOT required for MCP tools (`oracle_learn`, `oracle_search`, etc.) which work automatically via stdio.
 
 ## Usage
 
 ```
-/dev          # Start both servers
-/dev stop     # Stop both servers
-/dev status   # Check if servers are running
+/oracle-ui          # Start both servers
+/oracle-ui stop     # Stop both servers
+/oracle-ui status   # Check if servers are running
 ```
+
+## Note
+
+MCP tools are available in ALL Claude Code sessions without running this. The web UI is optional — use it when you want to browse learnings, traces, or threads visually.
 
 ## Implementation
 
@@ -57,12 +61,12 @@ Run in background.
 
 4. **Report**:
 ```
-## Dev Servers Started
+## Oracle Web UI Started
 
 | Service | Port | Status |
 |---------|------|--------|
-| Backend API | :47778 | ✓ Running |
-| Frontend    | :3000  | ✓ Running |
+| Backend API | :47778 | Running |
+| Frontend    | :3000  | Running |
 
 Backend: http://localhost:47778
 Frontend: http://localhost:3000
