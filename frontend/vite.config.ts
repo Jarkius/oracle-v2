@@ -15,7 +15,7 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(appVersion)
   },
   server: {
-    port: 3000,
+    port: 30005,
     proxy: {
       '/api': {
         target: `http://localhost:${process.env.ORACLE_PORT || 47778}`
